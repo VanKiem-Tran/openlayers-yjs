@@ -15,19 +15,41 @@ export default function useYjsStore(drillHoleId: string) {
 			}
 		);
 	}, [drillHoleId]);
+
 	const users = useUsers(wsProvider.awareness);
 	// console.log('users', users);
+
 	useEffect(() => {
 		wsProvider.connect();
 	}, []);
-	const yGeojsons: Y.Map<string> = doc.getMap('geojson');
-	const undoManager = new Y.UndoManager([yGeojsons]);
+
+  const yArray: Y.Array<string> = doc.getArray('features'); 
+
+  const undoManager = new Y.UndoManager(yArray);
+
+	function undo() {
+		if (undoManager.undoStack.length > 0) {
+			undoManager.undo();
+		}
+	}
+
+	function redo() {
+		if (undoManager.redoStack.length > 0) {
+			undoManager.redo();
+		}
+	}
+
+  function remove() {
+		yArray.delete(0, yArray.length);
+	}
 
 	return {
 		doc,
 		wsProvider,
-		yGeojsons,
-		undoManager,
+		yArray,
+		undo,
+    redo,
+    remove,
 		users,
 	};
 }

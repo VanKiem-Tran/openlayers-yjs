@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import Draw from 'ol/interaction/Draw.js';
 import Map from 'ol/Map.js';
 import View from 'ol/View.js';
@@ -39,14 +39,41 @@ const map = new Map({
 const typeSelect = document.getElementById('type') as any;
 
 function App() {
-  const { doc, wsProvider, yGeojsons, undoManager } = useYjsStore('WINU-0725');
+  const { doc, wsProvider, yArray, redo, undo, remove } = useYjsStore('WINU-0725');
 
-  const onChange = useCallback((data: string) => {
-		undoManager.stopCapturing();
-		doc.transact(() => {
-			yGeojsons.set('geojson', data);
+  yArray.observe((event, transaction) => {
+    event.changes.added.forEach((added) => {
+			const allFeatures = added.content.getContent();
+      allFeatures.map((data) => {
+        const featureData = JSON.parse(data);
+				const drawType = featureData.geometry.type;
+
+				if (drawType === 'Circle') {
+					const circle = new Circle(
+						featureData.geometry.center,
+						featureData.geometry.radius
+					);
+					const circleFeature = new Feature(circle);
+
+					source.addFeature(circleFeature);
+				} else {
+					const feature = new GeoJSON().readFeature(data);
+					source.addFeature(feature as any);
+				}
+      });
 		});
-	}, []);
+  });
+
+  document?.getElementById('undo')?.addEventListener('click', () => {
+		undo();
+	});
+	document?.getElementById('redo')?.addEventListener('click', () => {
+		redo();
+	});
+  document?.getElementById('remove')?.addEventListener('click', () => {
+		remove();
+    source.refresh();
+	});
 
   const addInteraction = () => {
 		const value = typeSelect.value;
@@ -66,7 +93,7 @@ function App() {
 			map.addInteraction(draw);
 		}
 
-		const writeCircleGeometry = (geometry: {
+    const writeCircleGeometry = (geometry: {
 			getCenter: () => number;
 			getRadius: () => number;
 		}) => {
@@ -85,51 +112,19 @@ function App() {
 			return JSON.stringify(geojson);
 		};
 
-		draw.on('drawend', (event: { feature: { getGeometry: () => any } }) => {
+    draw.on('drawend', (event: { feature: { getGeometry: () => any } }) => {
 			const drawType = event.feature.getGeometry().getType();
 			const geojson =
 				drawType === 'Circle'
 					? writeCircleGeometry(event.feature.getGeometry())
 					: new GeoJSON().writeFeature(event.feature as any);
-          console.log(source.getFeatures());
-      onChange(geojson);
+
+      yArray.push([geojson]);
 		});
 	};
 
-  doc.on('update', () => {
-		const data = yGeojsons.get('geojson') ?? '';
-    console.log(data);
-    const featureData = JSON.parse(data);
-    const drawType = featureData.geometry.type;
-
-    if (drawType === 'Circle') {
-      const circle = new Circle(featureData.geometry.center, featureData.geometry.radius);
-      const circleFeature = new Feature(circle);
-
-        source.addFeature(circleFeature);
-    } else {
-      const feature =  new GeoJSON().readFeature(data);
-      source.addFeature(feature as any);
-    }
-	});
-
   useEffect(() => {
     addInteraction();
-
-    // socket.on('geometry', (data) => {
-    //   const featureData = JSON.parse(data);
-    //   const drawType = featureData.geometry.type;
-      
-    //   if (drawType === 'Circle') {
-    //     const circle = new Circle(featureData.geometry.center, featureData.geometry.radius);
-    //     const circleFeature = new Feature(circle);
-
-    //      source.addFeature(circleFeature);
-    //   } else {
-    //     const feature =  new GeoJSON().readFeature(data);
-    //     source.addFeature(feature as any);
-    //   }
-    // });
   }, []);
 
   typeSelect.onchange = function () {
