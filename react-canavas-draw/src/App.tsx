@@ -1,17 +1,15 @@
 import * as React from 'react';
-import { useEffect, } from 'react';
-import { io } from 'socket.io-client';
+import { useEffect, useCallback } from 'react';
 import Draw from 'ol/interaction/Draw.js';
 import Map from 'ol/Map.js';
 import View from 'ol/View.js';
 import { OSM, Vector as VectorSource } from 'ol/source.js';
 import { Tile as TileLayer, Vector as VectorLayer } from 'ol/layer.js';
 import GeoJSON from 'ol/format/GeoJSON.js';
-import { Circle } from 'ol/geom';
 import KML from 'ol/format/KML.js';
+import { Circle } from 'ol/geom';
 import { Feature } from 'ol';
-
-export const socket = io('ws://localhost:1337');
+import useYjsStore from './hooks/useYjsStore';
 
 let draw: Draw;
 
@@ -40,7 +38,17 @@ const map = new Map({
 
 const typeSelect = document.getElementById('type') as any;
 
-	function addInteraction() {
+function App() {
+  const { doc, wsProvider, yGeojsons, undoManager } = useYjsStore('WINU-0725');
+
+  const onChange = useCallback((data: string) => {
+		undoManager.stopCapturing();
+		doc.transact(() => {
+			yGeojsons.set('geojson', data);
+		});
+	}, []);
+
+  const addInteraction = () => {
 		const value = typeSelect.value;
 		if (value !== 'None') {
 			if (value === 'Draw') {
@@ -58,14 +66,17 @@ const typeSelect = document.getElementById('type') as any;
 			map.addInteraction(draw);
 		}
 
-    const writeCircleGeometry = (geometry: { getCenter: () => number; getRadius: () => number }) => {
+		const writeCircleGeometry = (geometry: {
+			getCenter: () => number;
+			getRadius: () => number;
+		}) => {
 			const geometryData = {
 				type: 'Circle',
 				center: geometry.getCenter(),
 				radius: geometry.getRadius(),
 			};
 
-      const geojson = {
+			const geojson = {
 				type: 'Feature',
 				geometry: geometryData,
 				properties: null,
@@ -75,47 +86,56 @@ const typeSelect = document.getElementById('type') as any;
 		};
 
 		draw.on('drawend', (event: { feature: { getGeometry: () => any } }) => {
-      const drawType = event.feature.getGeometry().getType();
-
-      const geojson =
+			const drawType = event.feature.getGeometry().getType();
+			const geojson =
 				drawType === 'Circle'
-          ? writeCircleGeometry(event.feature.getGeometry())
+					? writeCircleGeometry(event.feature.getGeometry())
 					: new GeoJSON().writeFeature(event.feature as any);
-
-			socket.emit('send-geometry', geojson);
+          console.log(source.getFeatures());
+      onChange(geojson);
 		});
-	}
-	addInteraction();
+	};
 
-	typeSelect.onchange = function () {
+  doc.on('update', () => {
+		const data = yGeojsons.get('geojson') ?? '';
+    console.log(data);
+    const featureData = JSON.parse(data);
+    const drawType = featureData.geometry.type;
+
+    if (drawType === 'Circle') {
+      const circle = new Circle(featureData.geometry.center, featureData.geometry.radius);
+      const circleFeature = new Feature(circle);
+
+        source.addFeature(circleFeature);
+    } else {
+      const feature =  new GeoJSON().readFeature(data);
+      source.addFeature(feature as any);
+    }
+	});
+
+  useEffect(() => {
+    addInteraction();
+
+    // socket.on('geometry', (data) => {
+    //   const featureData = JSON.parse(data);
+    //   const drawType = featureData.geometry.type;
+      
+    //   if (drawType === 'Circle') {
+    //     const circle = new Circle(featureData.geometry.center, featureData.geometry.radius);
+    //     const circleFeature = new Feature(circle);
+
+    //      source.addFeature(circleFeature);
+    //   } else {
+    //     const feature =  new GeoJSON().readFeature(data);
+    //     source.addFeature(feature as any);
+    //   }
+    // });
+  }, []);
+
+  typeSelect.onchange = function () {
 		map.removeInteraction(draw);
 		addInteraction();
 	};
-
-function App() {
-  useEffect(() => {
-    socket.emit('join', {name: 'WINU-0725'});
-    socket.on('geometry', (data) => {
-      const featureData = JSON.parse(data);
-      const drawType = featureData.geometry.type;
-      
-      if (drawType === 'Circle') {
-        const circle = new Circle(featureData.geometry.center, featureData.geometry.radius);
-        const circleFeature = new Feature(circle);
-
-         source.addFeature(circleFeature);
-      } else {
-        const feature =  new GeoJSON().readFeature(data);
-        source.addFeature(feature as any);
-      }
-    });
-
-    return () => {
-      socket.off('geometry', (data) => {
-				console.log(data);
-			});
-    };
-  }, []);
 
   return (
     <></>
