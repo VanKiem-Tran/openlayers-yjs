@@ -19,17 +19,13 @@ export default function useYjsStore(drillHoleId: string) {
 	const users = useUsers(wsProvider.awareness);
 	// console.log('users', users);
 
-	useEffect(() => {
-		wsProvider.connect();
-	}, []);
-
   const yArray: Y.Array<string> = doc.getArray('features'); 
 
   const undoManager = new Y.UndoManager(yArray);
 
 	function undo() {
-		if (undoManager.undoStack.length > 0) {
-			undoManager.undo();
+    if (undoManager.undoStack.length > 0) {
+      undoManager.undo();
 		}
 	}
 
@@ -43,13 +39,23 @@ export default function useYjsStore(drillHoleId: string) {
 		yArray.delete(0, yArray.length);
 	}
 
+  function push(data: string) {
+    yArray.push([data]);
+  }
+
+  useEffect(() => {
+    wsProvider.connect();
+  }, []);
+
 	return {
 		doc,
 		wsProvider,
 		yArray,
+		push,
 		undo,
-    redo,
-    remove,
+		redo,
+		remove,
 		users,
+		undoManager,
 	};
 }
