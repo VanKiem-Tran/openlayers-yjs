@@ -82,11 +82,11 @@ function App() {
   });
 
   undoManager.on('stack-item-updated', (event: any) => {
-		console.log(event.stackItem);
+		// console.log(event.stackItem);
 	});
 
   const addInteraction = (
-		value: 'Point' | 'Draw' | 'LineString' | 'Polygon' | 'Circle' | 'None'
+		value?: 'Point' | 'Draw' | 'LineString' | 'Polygon' | 'Circle' | 'None'
 	) => {
 		if (value === 'None') {
       map.getInteractions().pop();
@@ -100,11 +100,25 @@ function App() {
 			} else {
 				draw = new Draw({
 					source: source,
-					type: value,
+					type: value ?? 'Point',
 				});
 			}
 			map.addInteraction(draw);
     }
+
+    draw.on(
+			'drawend',
+			(event: { feature: { [x: string]: any; getGeometry: () => any } }) => {
+				event.feature.setId(uuid.v4());
+				const drawType = event.feature.getGeometry().getType();
+				const geojson =
+					drawType === 'Circle'
+						? writeCircleGeometry(event.feature.getGeometry())
+						: new GeoJSON().writeFeature(event.feature as any);
+				console.log(geojson);
+				push(geojson);
+			}
+		);
 	};
 
   const writeCircleGeometry = (geometry: {
@@ -147,17 +161,7 @@ function App() {
 	};
 
   useEffect(() => {
-		addInteraction('Point');
-    draw.on('drawend', (event: { feature: {[x: string]: any; getGeometry: () => any } }) => {
-      event.feature.setId(uuid.v4());
-			const drawType = event.feature.getGeometry().getType();
-			const geojson =
-				drawType === 'Circle'
-					? writeCircleGeometry(event.feature.getGeometry())
-					: new GeoJSON().writeFeature(event.feature as any);
-
-			push(geojson);
-		});
+    addInteraction();
 	}, []);
 
   return (
