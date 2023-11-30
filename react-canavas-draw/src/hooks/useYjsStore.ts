@@ -7,7 +7,7 @@ export default function useYjsStore(drillHoleId: string) {
 	const doc = useMemo(() => new Y.Doc(), [drillHoleId]);
 	const wsProvider = useMemo(() => {
 		return new WebsocketProvider(
-			'ws://165.227.178.43/',
+			'wss://165.227.178.43/',
 			drillHoleId,
 			doc,
 			{
