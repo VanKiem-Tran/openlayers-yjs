@@ -23,9 +23,9 @@ raster.setBackground('black');
 
 
 const source = new VectorSource({
-    url: "src/data/kmlData.kml",
-    format: new KML(),
-  })
+	url: 'https://res.cloudinary.com/drh6sa2x5/raw/upload/v1701333403/kmlData_kbpxhd.kml',
+	format: new KML(),
+});
 
 const vector = new VectorLayer({
 	source: source,
@@ -81,7 +81,7 @@ function App() {
 		});
   });
 
-  undoManager.on('stack-item-updated', (event: any) => {
+  undoManager.on('stack-item-updated', () => {
 		// console.log(event.stackItem);
 	});
 
