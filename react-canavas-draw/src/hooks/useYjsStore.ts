@@ -35,13 +35,24 @@ export default function useYjsStore(drillHoleId: string) {
 		}
 	}
 
-  function remove() {
+  function handleRemoveData() {
 		yArray.delete(0, yArray.length);
 	}
 
-  function push(data: string) {
+  function handleAddData(data: string) {
     yArray.push([data]);
   }
+
+  function removeById(id: string) {
+    yArray.forEach((element, index) => {
+      const featureData = JSON.parse(element);
+      const featureId = featureData.id ?? '';
+
+      if (featureId === id) {
+        yArray.delete(index, 1);
+      }
+    });
+	}
 
   useEffect(() => {
     wsProvider.connect();
@@ -51,10 +62,11 @@ export default function useYjsStore(drillHoleId: string) {
 		doc,
 		wsProvider,
 		yArray,
-		push,
+		handleAddData,
 		undo,
 		redo,
-		remove,
+		handleRemoveData,
+		removeById,
 		users,
 		undoManager,
 	};

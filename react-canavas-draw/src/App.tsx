@@ -13,6 +13,7 @@ import useYjsStore from './hooks/useYjsStore';
 import { Select, Button } from 'antd'
 import * as uuid from 'uuid';
 import { isArray } from 'lodash-es';
+import { useUndoStore } from './hooks/useUndoStore';
 
 let draw: Draw;
 
@@ -42,7 +43,8 @@ const map = new Map({
 });
 
 function App() {
-  const { yArray, push, redo, undo, remove, undoManager } =
+  const { addedFeatureIds, removedFeatureIds, addFeatureId, onUndoFeatureId, onRedoFeatureId } = useUndoStore();
+  const { yArray, handleAddData, handleRemoveData, undoManager, removeById } =
 		useYjsStore('WINU-0725');
 
   yArray.observe((event) => {
@@ -58,6 +60,7 @@ function App() {
 						featureData.geometry.radius
 					);
 					const circleFeature = new Feature(circle);
+          circleFeature.setId(featureData.id ?? '');
 					source.addFeature(circleFeature);
 				} else {
 					const feature = new GeoJSON().readFeature(data);
@@ -67,17 +70,27 @@ function App() {
 		});
 
     event.changes.deleted.forEach((deleted) => {
-      const allFeatures = deleted.content.getContent();
+      const data = deleted.content.getContent()[0];
+      
+      const featureData = JSON.parse(data);
+			const drawType = featureData.geometry.type;
 
-      allFeatures.map((data) => {
-				const feature: any = new GeoJSON().readFeature(data);
-        const featureId = feature.getId();
+			if (drawType === 'Circle') {
+				const featureId = featureData.id ?? '';
 
-        const deletedFeature = source.getFeatureById(featureId);
-
-        if (deletedFeature && !isArray(deletedFeature))
+				const deletedFeature = source.getFeatureById(featureId);
+				if (deletedFeature && !isArray(deletedFeature)) {
 					source.removeFeature(deletedFeature);
-			});
+        }
+			} else {
+				const feature: any = new GeoJSON().readFeature(data);
+				const featureId = feature.getId();
+
+				const deletedFeature = source.getFeatureById(featureId);
+
+				if (deletedFeature && !isArray(deletedFeature))
+					source.removeFeature(deletedFeature);
+			}
 		});
   });
 
@@ -109,14 +122,20 @@ function App() {
     draw.on(
 			'drawend',
 			(event: { feature: { [x: string]: any; getGeometry: () => any } }) => {
-				event.feature.setId(uuid.v4());
+        const featureId = uuid.v4();
+				event.feature.setId(featureId);
+        
+        addFeatureId(featureId);
 				const drawType = event.feature.getGeometry().getType();
-				const geojson =
-					drawType === 'Circle'
-						? writeCircleGeometry(event.feature.getGeometry())
-						: new GeoJSON().writeFeature(event.feature as any);
-				console.log(geojson);
-				push(geojson);
+
+        if (drawType === 'Circle') {
+          const geojson = writeCircleGeometry(event.feature.getGeometry());
+          const featureData = JSON.parse(geojson);
+          featureData.id = featureId;
+          handleAddData(JSON.stringify(featureData));
+        } else {
+					handleAddData(new GeoJSON().writeFeature(event.feature as any));
+        }
 			}
 		);
 	};
@@ -147,16 +166,40 @@ function App() {
 		addInteraction(value);
 	};
 
-  const onRedo = () => {
-    redo();
+  const onUndo = () => {
+    const featureId = addedFeatureIds[addedFeatureIds.length - 1];
+
+    if (featureId) {
+      const feature: any = source.getFeatureById(featureId);
+      const drawType = feature.getGeometry().getType();
+    
+      removeById(featureId);
+
+      if (drawType === 'Circle') {
+        const geometry = feature?.getGeometry();
+				const geojson = writeCircleGeometry(geometry);
+        const featureData = JSON.parse(geojson);
+				featureData.id = featureId;
+        onUndoFeatureId(JSON.stringify(featureData));
+			} else {
+				onUndoFeatureId(new GeoJSON().writeFeature(feature));
+			}
+    }
   };
 
-  const onUndo = () => {
-		undo();
-	};
+  const onRedo = () => {
+    const featureId = removedFeatureIds[removedFeatureIds.length - 1]?.id;
+
+    if (featureId) {
+      const feature = removedFeatureIds[removedFeatureIds.length - 1].feature;
+      handleAddData(feature);
+      onRedoFeatureId();
+    }
+  };
+
 
   const onRemove = () => {
-		remove();
+		handleRemoveData();
     source.refresh();
 	};
 
