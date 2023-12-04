@@ -44,7 +44,7 @@ const map = new Map({
 
 function App() {
   const { addedFeatureIds, removedFeatureIds, addFeatureId, onUndoFeatureId, onRedoFeatureId } = useUndoStore();
-  const { yArray, handleAddData, handleRemoveData, undoManager, removeById } =
+  const { yArray, handleAddData, removeById } =
 		useYjsStore('WINU-0725');
 
   yArray.observe((event) => {
@@ -93,10 +93,6 @@ function App() {
 			}
 		});
   });
-
-  undoManager.on('stack-item-updated', () => {
-		// console.log(event.stackItem);
-	});
 
   const addInteraction = (
 		value?: 'Point' | 'Draw' | 'LineString' | 'Polygon' | 'Circle' | 'None'
@@ -199,8 +195,23 @@ function App() {
 
 
   const onRemove = () => {
-		handleRemoveData();
-    source.refresh();
+    addedFeatureIds?.map((featureId) => {
+			if (featureId) {
+				const feature: any = source.getFeatureById(featureId);
+				const drawType = feature.getGeometry().getType();
+
+				removeById(featureId);
+				if (drawType === 'Circle') {
+					const geometry = feature?.getGeometry();
+					const geojson = writeCircleGeometry(geometry);
+					const featureData = JSON.parse(geojson);
+					featureData.id = featureId;
+					onUndoFeatureId(JSON.stringify(featureData));
+				} else {
+					onUndoFeatureId(new GeoJSON().writeFeature(feature));
+				}
+			}
+    })
 	};
 
   useEffect(() => {

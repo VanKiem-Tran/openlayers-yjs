@@ -21,24 +21,6 @@ export default function useYjsStore(drillHoleId: string) {
 
   const yArray: Y.Array<string> = doc.getArray('features'); 
 
-  const undoManager = new Y.UndoManager(yArray);
-
-	function undo() {
-    if (undoManager.undoStack.length > 0) {
-      undoManager.undo();
-		}
-	}
-
-	function redo() {
-		if (undoManager.redoStack.length > 0) {
-			undoManager.redo();
-		}
-	}
-
-  function handleRemoveData() {
-		yArray.delete(0, yArray.length);
-	}
-
   function handleAddData(data: string) {
     yArray.push([data]);
   }
@@ -63,11 +45,7 @@ export default function useYjsStore(drillHoleId: string) {
 		wsProvider,
 		yArray,
 		handleAddData,
-		undo,
-		redo,
-		handleRemoveData,
 		removeById,
 		users,
-		undoManager,
 	};
 }
