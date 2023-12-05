@@ -36,6 +36,10 @@ export default function useYjsStore(drillHoleId: string) {
     });
 	}
 
+  function removeAll() {
+		yArray.delete(0, yArray.length);
+	}
+
   useEffect(() => {
     wsProvider.connect();
   }, []);
@@ -45,6 +49,7 @@ export default function useYjsStore(drillHoleId: string) {
 		wsProvider,
 		yArray,
 		handleAddData,
+    removeAll,
 		removeById,
 		users,
 	};

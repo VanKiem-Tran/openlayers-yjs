@@ -14,8 +14,29 @@ import { Select, Button } from 'antd'
 import * as uuid from 'uuid';
 import { isArray } from 'lodash-es';
 import { useUndoStore } from './hooks/useUndoStore';
+import { getStyle, writeCircleGeometry } from './utils/tools';
+import Transform from 'ol-ext/interaction/Transform';
+import { shiftKeyOnly } from 'ol/events/condition';
+import { Fill, RegularShape, Stroke, Style, Text } from 'ol/style';
 
 let draw: Draw;
+
+const interaction = new Transform({
+	enableRotatedTransform: true,
+	addCondition: shiftKeyOnly,
+	hitTolerance: 2,
+	translateFeature: true,
+	scale: true,
+	rotate: true,
+	keepAspectRatio: undefined,
+	keepRectangle: false,
+	translate: false,
+	stretch: true,
+	pointRadius: function (f) {
+		const radius = f.get('radius') || 10;
+		return [radius, radius];
+	},
+});
 
 const raster = new TileLayer({
 	source: new XYZ(),
@@ -30,6 +51,7 @@ const source = new VectorSource({
 
 const vector = new VectorLayer({
 	source: source,
+  // style: getStyle as any,
 });
 
 const map = new Map({
@@ -43,15 +65,20 @@ const map = new Map({
 });
 
 function App() {
-  const { addedFeatureIds, removedFeatureIds, addFeatureId, onUndoFeatureId, onRedoFeatureId } = useUndoStore();
-  const { yArray, handleAddData, removeById } =
-		useYjsStore('WINU-0725');
+	const {
+		addedFeatureIds,
+		removedFeatureIds,
+		addFeatureId,
+		onUndoFeatureId,
+		onRedoFeatureId,
+	} = useUndoStore();
+	const { yArray, handleAddData, removeById, removeAll } = useYjsStore('WINU-0725');
 
-  yArray.observe((event) => {
-    event.changes.added.forEach((added) => {
+	yArray.observe((event) => {
+		event.changes.added.forEach((added) => {
 			const allFeatures = added.content.getContent();
-      allFeatures.map((data) => {
-        const featureData = JSON.parse(data);
+			allFeatures.map((data) => {
+				const featureData = JSON.parse(data);
 				const drawType = featureData.geometry.type;
 
 				if (drawType === 'Circle') {
@@ -60,19 +87,19 @@ function App() {
 						featureData.geometry.radius
 					);
 					const circleFeature = new Feature(circle);
-          circleFeature.setId(featureData.id ?? '');
+					circleFeature.setId(featureData.id ?? '');
 					source.addFeature(circleFeature);
 				} else {
 					const feature = new GeoJSON().readFeature(data);
 					source.addFeature(feature as any);
 				}
-      });
+			});
 		});
 
-    event.changes.deleted.forEach((deleted) => {
-      const data = deleted.content.getContent()[0];
-      
-      const featureData = JSON.parse(data);
+		event.changes.deleted.forEach((deleted) => {
+			const data = deleted.content.getContent()[0];
+
+			const featureData = JSON.parse(data);
 			const drawType = featureData.geometry.type;
 
 			if (drawType === 'Circle') {
@@ -81,7 +108,7 @@ function App() {
 				const deletedFeature = source.getFeatureById(featureId);
 				if (deletedFeature && !isArray(deletedFeature)) {
 					source.removeFeature(deletedFeature);
-        }
+				}
 			} else {
 				const feature: any = new GeoJSON().readFeature(data);
 				const featureId = feature.getId();
@@ -92,15 +119,16 @@ function App() {
 					source.removeFeature(deletedFeature);
 			}
 		});
-  });
+	});
 
-  const addInteraction = (
-		value?: 'Point' | 'Draw' | 'LineString' | 'Polygon' | 'Circle' | 'None'
+	const addInteraction = (
+		value?: 'Point' | 'Draw' | 'LineString' | 'Polygon' | 'Circle' | 'Select'
 	) => {
-		if (value === 'None') {
-      map.getInteractions().pop();
+		if (value === 'Select') {
+			map.getInteractions().pop();
+      map.addInteraction(interaction);
 		} else {
-      if (value === 'Draw') {
+			if (value === 'Draw') {
 				draw = new Draw({
 					source: source,
 					type: 'LineString',
@@ -113,89 +141,117 @@ function App() {
 				});
 			}
 			map.addInteraction(draw);
-    }
+		}
 
-    draw.on(
+		draw.on(
 			'drawend',
 			(event: { feature: { [x: string]: any; getGeometry: () => any } }) => {
-        const featureId = uuid.v4();
+				const featureId = uuid.v4();
 				event.feature.setId(featureId);
-        
-        addFeatureId(featureId);
+
+				addFeatureId(featureId);
 				const drawType = event.feature.getGeometry().getType();
 
-        if (drawType === 'Circle') {
-          const geojson = writeCircleGeometry(event.feature.getGeometry());
-          const featureData = JSON.parse(geojson);
-          featureData.id = featureId;
-          handleAddData(JSON.stringify(featureData));
-        } else {
+				if (drawType === 'Circle') {
+					const geojson = writeCircleGeometry(event.feature.getGeometry());
+					const featureData = JSON.parse(geojson);
+					featureData.id = featureId;
+					handleAddData(JSON.stringify(featureData));
+				} else {
 					handleAddData(new GeoJSON().writeFeature(event.feature as any));
-        }
+				}
 			}
 		);
 	};
 
-  const writeCircleGeometry = (geometry: {
-		getCenter: () => number;
-		getRadius: () => number;
-	}) => {
-		const geometryData = {
-			type: 'Circle',
-			center: geometry.getCenter(),
-			radius: geometry.getRadius(),
-		};
+  const setHandleStyle = () => {
+		// Style the rotate handle
+		const circle = new RegularShape({
+			fill: new Fill({ color: [255, 255, 255, 0.01] }),
+			stroke: new Stroke({ width: 1, color: [0, 0, 0, 0.01] }),
+			radius: 8,
+			points: 10,
+		});
+		interaction.setStyle(
+			'rotate',
+			new Style({
+				text: new Text({
+					text: '\uf0e2',
+					font: '16px Fontawesome',
+					textAlign: 'left',
+					fill: new Fill({ color: 'red' }),
+				}),
+				image: circle,
+			})
+		);
+		// Center of rotation
+		interaction.setStyle(
+			'rotate0',
+			new Style({
+				text: new Text({
+					text: '\uf0e2',
+					font: '20px Fontawesome',
+					fill: new Fill({ color: [255, 255, 255, 0.8] }),
+					stroke: new Stroke({ width: 2, color: 'red' }),
+				}),
+			})
+		);
+		// Style the move handle
+		interaction.setStyle(
+			'translate',
+			new Style({
+				text: new Text({
+					text: '\uf047',
+					font: '20px Fontawesome',
+					fill: new Fill({ color: [255, 255, 255, 0.8] }),
+					stroke: new Stroke({ width: 2, color: 'red' }),
+				}),
+			})
+		);
+		// Refresh
+		interaction.set('translate', interaction.get('translate'));
+	}
 
-		const geojson = {
-			type: 'Feature',
-			geometry: geometryData,
-			properties: null,
-		};
-
-		return JSON.stringify(geojson);
-	};
-
-  const handleChange = (
-		value: 'Point' | 'Draw' | 'LineString' | 'Polygon' | 'Circle' | 'None'
+	const handleChange = (
+		value: 'Point' | 'Draw' | 'LineString' | 'Polygon' | 'Circle' | 'Select'
 	) => {
 		map.removeInteraction(draw);
 		addInteraction(value);
 	};
 
-  const onUndo = () => {
-    const featureId = addedFeatureIds[addedFeatureIds.length - 1];
+	const onUndo = () => {
+		const featureId = addedFeatureIds[addedFeatureIds.length - 1];
 
-    if (featureId) {
-      const feature: any = source.getFeatureById(featureId);
-      const drawType = feature.getGeometry().getType();
-    
-      removeById(featureId);
+		if (featureId) {
+			const feature: any = source.getFeatureById(featureId);
+			const drawType = feature.getGeometry().getType();
 
-      if (drawType === 'Circle') {
-        const geometry = feature?.getGeometry();
+			removeById(featureId);
+
+			if (drawType === 'Circle') {
+				const geometry = feature?.getGeometry();
 				const geojson = writeCircleGeometry(geometry);
-        const featureData = JSON.parse(geojson);
+				const featureData = JSON.parse(geojson);
 				featureData.id = featureId;
-        onUndoFeatureId(JSON.stringify(featureData));
+				onUndoFeatureId(JSON.stringify(featureData));
 			} else {
 				onUndoFeatureId(new GeoJSON().writeFeature(feature));
 			}
-    }
-  };
+		}
+	};
 
-  const onRedo = () => {
-    const featureId = removedFeatureIds[removedFeatureIds.length - 1]?.id;
+	const onRedo = () => {
+		const featureId = removedFeatureIds[removedFeatureIds.length - 1]?.id;
 
-    if (featureId) {
-      const feature = removedFeatureIds[removedFeatureIds.length - 1].feature;
-      handleAddData(feature);
-      onRedoFeatureId();
-    }
-  };
+		if (featureId) {
+			const feature = removedFeatureIds[removedFeatureIds.length - 1].feature;
+			handleAddData(feature);
+			onRedoFeatureId();
+		}
+	};
 
-
-  const onRemove = () => {
-    addedFeatureIds?.map((featureId) => {
+	const onRemove = () => {
+		addedFeatureIds?.map((featureId) => {
 			if (featureId) {
 				const feature: any = source.getFeatureById(featureId);
 				const drawType = feature.getGeometry().getType();
@@ -211,14 +267,19 @@ function App() {
 					onUndoFeatureId(new GeoJSON().writeFeature(feature));
 				}
 			}
-    })
+		});
+
+    // clear all shapes
+    removeAll();
+    source.refresh()
 	};
 
-  useEffect(() => {
-    addInteraction();
+	useEffect(() => {
+		addInteraction();
+    setHandleStyle();
 	}, []);
 
-  return (
+	return (
 		<>
 			<div
 				style={{
@@ -250,7 +311,7 @@ function App() {
 						{ value: 'LineString', label: 'LineString' },
 						{ value: 'Polygon', label: 'Polygon' },
 						{ value: 'Circle', label: 'Circle' },
-						{ value: 'None', label: 'None' },
+						{ value: 'Select', label: 'Select' },
 					]}
 				/>
 				<Button onClick={onUndo}>Undo</Button>
