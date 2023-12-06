@@ -12,12 +12,13 @@ import { Feature } from 'ol';
 import useYjsStore from './hooks/useYjsStore';
 import { Select, Button } from 'antd'
 import * as uuid from 'uuid';
-import { isArray } from 'lodash-es';
+import { isArray, isEqual } from 'lodash-es';
 import { useUndoStore } from './hooks/useUndoStore';
-import { getStyle, writeCircleGeometry } from './utils/tools';
+import { writeCircleGeometry } from './utils/tools';
 import Transform from 'ol-ext/interaction/Transform';
 import { shiftKeyOnly } from 'ol/events/condition';
 import { Fill, RegularShape, Stroke, Style, Text } from 'ol/style';
+import { FeatureData } from './utils/type';
 
 let draw: Draw;
 
@@ -72,53 +73,112 @@ function App() {
 		onUndoFeatureId,
 		onRedoFeatureId,
 	} = useUndoStore();
-	const { yArray, handleAddData, removeById, removeAll } = useYjsStore('WINU-0725');
+	const { yArray, handleAddDataStore, removeById, findById } =
+		useYjsStore('WINU-0725');
+
+  const onAddData = (data: string) => {
+    const featureData = JSON.parse(data);
+		const drawType = featureData.geometry.type;
+
+		if (drawType === 'Circle') {
+			const circle = new Circle(
+				featureData.geometry.center,
+				featureData.geometry.radius
+			);
+			const circleFeature = new Feature(circle);
+			circleFeature.setId(featureData.id ?? '');
+			source.addFeature(circleFeature);
+		} else {
+			const feature = new GeoJSON().readFeature(data);
+			source.addFeature(feature as any);
+		}
+  }
+  const onDeleteData = (data: string) => {
+    const featureData: FeatureData = JSON.parse(data);
+		const drawType = featureData.geometry.type;
+
+		if (drawType === 'Circle') {
+			const featureId = featureData.id ?? '';
+
+			const deletedFeature = source.getFeatureById(featureId);
+			if (deletedFeature && !isArray(deletedFeature)) {
+				source.removeFeature(deletedFeature);
+			}
+		} else {
+			const feature: any = new GeoJSON().readFeature(data);
+			const featureId = feature.getId();
+
+			const deletedFeature = source.getFeatureById(featureId);
+
+			if (deletedFeature && !isArray(deletedFeature))
+				source.removeFeature(deletedFeature);
+		}
+	};
+
+  const onRemoveFeatureById = (featureId: string) => {
+		const feature: any = source.getFeatureById(featureId);
+		const drawType = feature.getGeometry().getType();
+
+		removeById(featureId);
+
+		if (drawType === 'Circle') {
+			const geometry = feature?.getGeometry();
+			const geojson = writeCircleGeometry(geometry);
+			const featureData = JSON.parse(geojson);
+			featureData.id = featureId;
+			onUndoFeatureId(JSON.stringify(featureData));
+		} else {
+			onUndoFeatureId(new GeoJSON().writeFeature(feature));
+		}
+	};
 
 	yArray.observe((event) => {
 		event.changes.added.forEach((added) => {
 			const allFeatures = added.content.getContent();
 			allFeatures.map((data) => {
-				const featureData = JSON.parse(data);
-				const drawType = featureData.geometry.type;
-
-				if (drawType === 'Circle') {
-					const circle = new Circle(
-						featureData.geometry.center,
-						featureData.geometry.radius
-					);
-					const circleFeature = new Feature(circle);
-					circleFeature.setId(featureData.id ?? '');
-					source.addFeature(circleFeature);
-				} else {
-					const feature = new GeoJSON().readFeature(data);
-					source.addFeature(feature as any);
-				}
+        if (data) onAddData(data);
 			});
 		});
 
 		event.changes.deleted.forEach((deleted) => {
 			const data = deleted.content.getContent()[0];
-
-			const featureData = JSON.parse(data);
-			const drawType = featureData.geometry.type;
-
-			if (drawType === 'Circle') {
-				const featureId = featureData.id ?? '';
-
-				const deletedFeature = source.getFeatureById(featureId);
-				if (deletedFeature && !isArray(deletedFeature)) {
-					source.removeFeature(deletedFeature);
-				}
-			} else {
-				const feature: any = new GeoJSON().readFeature(data);
-				const featureId = feature.getId();
-
-				const deletedFeature = source.getFeatureById(featureId);
-
-				if (deletedFeature && !isArray(deletedFeature))
-					source.removeFeature(deletedFeature);
-			}
+      if (data) onDeleteData(data);
 		});
+	});
+
+  interaction.on(['translateend', 'scaleend', 'rotateend'], function (e: any) {
+		if (e.features && e.features.getLength()) {
+      e.features.array_.map((feature: Feature) => {
+        const featureId = feature.getId();
+        if (featureId) {
+					const featureStored = findById(featureId);
+					if (featureStored) {
+            const drawType = feature?.getGeometry()?.getType();
+						const featureParsed = JSON.parse(featureStored);
+
+            if (drawType === 'Circle') {
+              const geojson = JSON.parse(
+								writeCircleGeometry(feature.getGeometry() as any)
+							);
+              geojson.id = featureParsed.id;
+
+              if (!isEqual(geojson.geometry, featureParsed.geometry)) {
+                onRemoveFeatureById(featureParsed.id);
+                handleAddDataStore(JSON.stringify(geojson));
+              }
+            } else {
+              const geojson = JSON.parse(new GeoJSON().writeFeature(feature));
+              geojson.id = featureParsed.id;
+
+              if (!isEqual(geojson.geometry, featureParsed.geometry)) {
+								onRemoveFeatureById(featureParsed.id);
+                handleAddDataStore(JSON.stringify(geojson));
+              }
+            }
+					}
+				}
+      });
+		}
 	});
 
 	const addInteraction = (
@@ -141,6 +201,7 @@ function App() {
 				});
 			}
 			map.addInteraction(draw);
+      map.removeInteraction(interaction);
 		}
 
 		draw.on(
@@ -156,9 +217,9 @@ function App() {
 					const geojson = writeCircleGeometry(event.feature.getGeometry());
 					const featureData = JSON.parse(geojson);
 					featureData.id = featureId;
-					handleAddData(JSON.stringify(featureData));
+					handleAddDataStore(JSON.stringify(featureData));
 				} else {
-					handleAddData(new GeoJSON().writeFeature(event.feature as any));
+					handleAddDataStore(new GeoJSON().writeFeature(event.feature as any));
 				}
 			}
 		);
@@ -222,22 +283,7 @@ function App() {
 	const onUndo = () => {
 		const featureId = addedFeatureIds[addedFeatureIds.length - 1];
 
-		if (featureId) {
-			const feature: any = source.getFeatureById(featureId);
-			const drawType = feature.getGeometry().getType();
-
-			removeById(featureId);
-
-			if (drawType === 'Circle') {
-				const geometry = feature?.getGeometry();
-				const geojson = writeCircleGeometry(geometry);
-				const featureData = JSON.parse(geojson);
-				featureData.id = featureId;
-				onUndoFeatureId(JSON.stringify(featureData));
-			} else {
-				onUndoFeatureId(new GeoJSON().writeFeature(feature));
-			}
-		}
+    if (featureId) onRemoveFeatureById(featureId);
 	};
 
 	const onRedo = () => {
@@ -245,33 +291,19 @@ function App() {
 
 		if (featureId) {
 			const feature = removedFeatureIds[removedFeatureIds.length - 1].feature;
-			handleAddData(feature);
+			handleAddDataStore(feature);
 			onRedoFeatureId();
 		}
 	};
 
 	const onRemove = () => {
 		addedFeatureIds?.map((featureId) => {
-			if (featureId) {
-				const feature: any = source.getFeatureById(featureId);
-				const drawType = feature.getGeometry().getType();
-
-				removeById(featureId);
-				if (drawType === 'Circle') {
-					const geometry = feature?.getGeometry();
-					const geojson = writeCircleGeometry(geometry);
-					const featureData = JSON.parse(geojson);
-					featureData.id = featureId;
-					onUndoFeatureId(JSON.stringify(featureData));
-				} else {
-					onUndoFeatureId(new GeoJSON().writeFeature(feature));
-				}
-			}
+      if (featureId) onRemoveFeatureById(featureId);
 		});
 
     // clear all shapes
-    removeAll();
-    source.refresh()
+    // removeAll();
+    // source.refresh()
 	};
 
 	useEffect(() => {

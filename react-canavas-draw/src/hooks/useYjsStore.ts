@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { useEffect, useMemo } from 'react';
 import { useUsers } from 'y-presence';
+import { FeatureData } from '../utils/type';
 
 export default function useYjsStore(drillHoleId: string) {
 	const doc = useMemo(() => new Y.Doc(), [drillHoleId]);
@@ -21,8 +22,17 @@ export default function useYjsStore(drillHoleId: string) {
 
   const yArray: Y.Array<string> = doc.getArray('features'); 
 
-  function handleAddData(data: string) {
+  function handleAddDataStore(data: string) {
     yArray.push([data]);
+  }
+
+  function findById(id: string | number) {
+    return yArray.toArray().find((element) => {
+			const featureData: FeatureData = JSON.parse(element);
+			const featureId = featureData.id ?? '';
+
+			return featureId === id;
+		});
   }
 
   function removeById(id: string) {
@@ -48,9 +58,10 @@ export default function useYjsStore(drillHoleId: string) {
 		doc,
 		wsProvider,
 		yArray,
-		handleAddData,
-    removeAll,
+		handleAddDataStore,
+		removeAll,
 		removeById,
+    findById,
 		users,
 	};
 }
